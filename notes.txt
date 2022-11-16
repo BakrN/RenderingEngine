@@ -1,0 +1,55 @@
+Triangle setup
+
+multiplications : 
+x0 y2 = c1 (in e0c)// save these
+x2 y0 = c2 (in e1c)// save this
+out = c1 - c2
+x2 y1 = c1
+x1 y2 = c2
+out = c1 - c2
+x1 y0 = c1
+x0 y1 = c2
+out = c1 - c2
+
+
+Triangle binner: 
+normalization of coefficients: 
+addition: 
+glm::abs(ee0.x) + glm::abs(ee0.y) = c0 => e2.x 
+glm::abs(ee1.x) + glm::abs(ee1.y) = c1 => e2.y
+glm::abs(ee2.x) + glm::abs(ee2.y) = c2 => e2.z
+rcp : 
+1/c0
+1/c1
+1/c2
+mul: 
+ee0.x*1/c0 => , ee0.y*1/c0, ee0.z*1/c0 , ee1.x*1/c1
+ee1.y*1/c1 , ee1.z*1/c1, ee2.x*1/c2 , ee2.y*1/c2
+ee2.z*1/c2
+
+Initial edge functions
+3 Multiplications + reduction
+
+TR edge function 
+float edgeFuncTR0 = edgeFunc0 + ((ee0.x * (scTileCornerOffsets[edge0TRCorner].x + txxOffset)) + (ee0.y * (scTileCornerOffsets[edge0TRCorner].y + tyyOffset)));
+float edgeFuncTR1 = edgeFunc1 + ((ee1.x * (scTileCornerOffsets[edge1TRCorner].x + txxOffset)) + (ee1.y * (scTileCornerOffsets[edge1TRCorner].y + tyyOffset)));
+float edgeFuncTR2 = edgeFunc2 + ((ee2.x * (scTileCornerOffsets[edge2TRCorner].x + txxOffset)) + (ee2.y * (scTileCornerOffsets[edge2TRCorner].y + tyyOffset)));
+ee0.x * (offset + txxOffset) + ee0.y*(offset+tyyOffset)
+1st step -> offset0.x + txx , offset0.y +tyy
+            offset1.x + txx , offset1.x +tyy
+step 2 -> multiplication 
+step 3 -> reduction 
+then for final tr2 
+addition 
+multiplication 
+reduction 
+
+if any are <0  (outside triangle)
+then reject tile and move on 
+
+TA edge function calculation 
+same steps  above but offsets with TA calculated
+
+
+else 
+send to raster
