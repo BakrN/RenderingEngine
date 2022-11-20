@@ -1,9 +1,8 @@
 // Made by: Abubakr Nada 
 // Calculates TR and TA corners of a corner 
 // writes to either frag_shader with tile_start_x, y and size or rasterizer for further reduction 
-`define TILE_SIZE 16 // 16x16
 // Floating poitn format for 16 is: 0b 5'b10011 16'h8000 , 2^4
-
+`include "rtl/ren_params.v"
 module ren_binner(
     clk, 
     // control
@@ -21,7 +20,12 @@ module ren_binner(
     i_e2_b  , 
     i_e2_c  ,
     i_min_x , 
-    i_max_x ,
+    i_min_y ,
+    i_step_x, 
+    i_step_y, 
+    // reaster in 
+    i_busy_r , 
+    i_full , // fifo (stall)
     // outputs
     o_tile_x , 
     o_tile_y , 
@@ -33,6 +37,8 @@ module ren_binner(
     input i_en; 
     input rstn; 
     input i_valid; 
+    input i_busy_r; 
+    input i_full  ;  
     input [21:0] i_e0_a ; 
     input [21:0] i_e0_b ; 
     input [21:0] i_e0_c ; 
@@ -43,7 +49,10 @@ module ren_binner(
     input [21:0] i_e2_b ; 
     input [21:0] i_e2_c ;
     input [21:0] i_min_x; 
-    input [21:0] i_max_x; 
+    input [21:0] i_min_y; 
+    input [21:0] i_step_x; 
+    input [21:0] i_step_y; 
+
     output [21:0] o_tile_x ; 
     output [21:0] o_tile_y ; 
     output o_tile_size; 
@@ -88,6 +97,7 @@ module ren_binner(
     localparam s_efunc_ta_red_2 = 23 ; 
     localparam s_raster_out = 24;
     localparam s_shader_out = 31;
+    localparam s_tile_step = 32; 
     localparam [21:0] tile_size = {1'b0, 5'b10011 , 16'h8000}; 
     // Wires  
     wire [1:0]  w_e0_tr ;
@@ -121,13 +131,11 @@ module ren_binner(
     reg [21:0] r_e1_func; 
     reg [21:0] r_e2_func; 
     reg [21:0] r_tx ; // tile x 
-    reg [21:0] r_min_tx ; // tile x 
-    reg [21:0] r_min_ty ; // tile y
     reg [21:0] r_ty ; // tile y
-    wire [21:0] r_tx_next; 
-    wire [21:0] r_ty_next; 
     reg [21:0] r_intermediate_x  ,r_intermediate_y; 
-    reg [4:0] r_state; 
+    reg [5:0] r_state; 
+    reg [15:0] r_tx_counter; 
+    reg [15:0] r_ty_counter; 
     
 
     // Assign 
@@ -150,7 +158,8 @@ module ren_binner(
     ((r_state==s_efunc_ta_mul_1) ? {r_e1_func , r_ee1_a , r_ee1_b ,22'd0} : 
     ((r_state==s_efunc_ta_add_2) ? {w_corner_offsets[w_e2_ta][43:22] , w_corner_offsets[w_e2_ta][21:0] , 44'd0} :
     ((r_state==s_efunc_ta_mul_2) ? {r_e2_func , r_ee2_a , r_ee2_b ,22'd0} : 
-    1)))))))))))))))))); 
+    ((r_state==s_tile_step) ? {r_tx, r_ty, 22'd0,22'd0} : 
+    1))))))))))))))))))); 
     assign w_simd_in1 = (r_state==s_norm_add) ? {{1'b0, i_e0_b[20:0]} , {1'b0 ,i_e1_b[20:0]} , {1'b0 ,i_e2_b[20:0]} , 22'd0} : 
     ((r_state==s_norm_mul_0) ? {r_ee0_a, r_ee0_b, r_ee0_c, r_ee1_a} : 
     ((r_state==s_norm_mul_1) ? {r_ee1_b, r_ee1_c, r_ee2_a , r_ee2_b} : 
@@ -170,7 +179,8 @@ module ren_binner(
     ((r_state==s_efunc_ta_mul_1) ? {{1'b0 , 5'hf , 16'h8000} , r_intermediate_x, r_intermediate_y,22'd0} : 
     ((r_state==s_efunc_ta_add_2) ? {r_tx ,r_ty , 44'd0} : // x , y
     ((r_state==s_efunc_ta_mul_2) ? {{1'b0 , 5'hf , 16'h8000} , r_intermediate_x, r_intermediate_y,22'd0} : 
-    1)))))))))))))))))); 
+    ((r_state==s_tile_step) ? {`fpTILE_SIZE, `fpTILE_SIZE, 22'd0,22'd0} : 
+    1))))))))))))))))))); 
     assign w_tr_tile = 0; // ors less than 0
     assign w_ta_tile = 0; // and over 0 
     // Always 
@@ -228,6 +238,10 @@ module ren_binner(
                 if (i_en && i_valid)begin 
                     r_state <= s_norm_add; 
                     r_simd_opcode <= op_add; 
+                    r_tx_counter <= 0 ; 
+                    r_ty_counter <= 0 ; 
+                    r_tx <= i_min_x;
+                    r_ty <= i_min_y;
                 end
             end
             s_norm_add: begin 
@@ -336,8 +350,8 @@ module ren_binner(
                         // less than one 
                         // discard
                         // update tx, ty with tile_size 
-                        r_tx <= r_tx_next; 
-                        r_tx <= r_ty_next; 
+                        r_state <= s_tile_step ;
+                        r_simd_opcode <= op_add ;
                     end else begin 
                         r_state <= s_efunc_tr_add_1; 
                         r_simd_opcode <= op_add ;
@@ -349,6 +363,7 @@ module ren_binner(
                     r_intermediate_x <= w_simd_out[4*22-1:3*22]; 
                     r_intermediate_y <= w_simd_out[3*22-1:2*22]; 
                     r_state <= s_efunc_tr_mul_1; 
+                    
                     r_simd_opcode <= op_mul ;
                 end
             end
@@ -361,8 +376,11 @@ module ren_binner(
             s_efunc_tr_red_1: begin 
                 // check if it's less than 0 , if it is discard and restart(increase r_x or r_y)
                     if (w_simd_out[4*22-1]) begin 
-                        r_tx <= r_tx_next; 
-                        r_tx <= r_ty_next; 
+                        // less than one 
+                        // discard
+                        // update tx, ty with tile_size 
+                        r_state <= s_tile_step ;
+                        r_simd_opcode <= op_add ;
                     end else begin 
                         r_state <= s_efunc_tr_add_2; 
                         r_simd_opcode <= op_add ;
@@ -386,8 +404,12 @@ module ren_binner(
 
             s_efunc_tr_red_2: begin 
                 if (w_simd_out[4*22-1]) begin 
-                    r_tx <= r_tx_next; 
-                    r_tx <= r_ty_next; 
+                    // less than one 
+                        // discard
+                        // update tx, ty with tile_size 
+                        r_state <= s_tile_step ;
+                        r_simd_opcode <= op_add ;
+
                 end else begin 
                     r_state <= s_efunc_ta_add_0; 
                     r_simd_opcode <= op_add ;
@@ -397,7 +419,7 @@ module ren_binner(
                 if (w_simd_valid) begin 
                     r_intermediate_x <= w_simd_out[4*22-1:3*22]; 
                     r_intermediate_y <= w_simd_out[3*22-1:2*22]; 
-                    r_state <= s_efunc_ta_mul_1; 
+                    r_state <= s_efunc_ta_mul_0; 
                     r_simd_opcode <= op_mul ;
                 end
             end
@@ -409,39 +431,89 @@ module ren_binner(
             end
             s_efunc_ta_red_0: begin 
                 if (w_simd_out[4*22-1]) begin 
-                    // if one is negative then send to raster +
-                    r_tx <= r_tx_next; 
-                    r_tx <= r_ty_next; 
+                    // if one is negative then send to raster + and restart
+                    r_state <= s_raster_out ;
                 end else begin 
-                    r_state <= s_efunc_ta_add_0; 
+                    r_state <= s_efunc_ta_add_1; 
                     r_simd_opcode <= op_add ;
                 end
             end
             s_efunc_ta_add_1: begin 
-
+                if (w_simd_valid) begin 
+                    r_intermediate_x <= w_simd_out[4*22-1:3*22]; 
+                    r_intermediate_y <= w_simd_out[3*22-1:2*22]; 
+                    r_state <= s_efunc_ta_mul_1; 
+                    r_simd_opcode <= op_mul ;
+                end
             end
             s_efunc_ta_mul_1: begin 
-
+                if (w_simd_valid) begin 
+                    r_state <= s_efunc_ta_red_1; 
+                    r_simd_opcode <= op_reduce_add ;
+                end
             end
 
             s_efunc_ta_red_1: begin 
-
+                if (w_simd_out[4*22-1]) begin 
+                    // if one is negative then send to raster + and restart
+                    r_state <= s_raster_out ;
+                end else begin 
+                    r_state <= s_efunc_ta_add_2; 
+                    r_simd_opcode <= op_add ;
+                end
             end
             s_efunc_ta_add_2: begin 
-
+                if (w_simd_valid) begin 
+                    r_intermediate_x <= w_simd_out[4*22-1:3*22]; 
+                    r_intermediate_y <= w_simd_out[3*22-1:2*22]; 
+                    r_state <= s_efunc_ta_mul_2; 
+                    r_simd_opcode <= op_mul ;
+                end
             end
             s_efunc_ta_mul_2: begin 
-
+                    if (w_simd_valid) begin 
+                    r_state <= s_efunc_ta_red_2; 
+                    r_simd_opcode <= op_reduce_add ;
+                end
             end
 
             s_efunc_ta_red_2: begin 
+                if (w_simd_out[4*22-1]) begin 
+                    // if one is negative then send to raster + and restart
+                    r_state <= s_raster_out ;
+                end else begin 
+                    r_state <= s_shader_out; // full tile size
+                end
+            end
+            s_tile_step: begin 
+                if (r_ty_counter < i_step_y) begin 
+                    if(w_simd_valid) begin 
+                        r_state <= s_efunc_tr_add_0; 
+                        if (r_tx_counter < i_step_x) begin 
+                            // lod simd output which adds tile size to r_tx 
+                            r_tx <= w_simd_out[4*22-1:3*22]; 
+                        end else begin 
+                            // load simd output to ty and reset r_tx
+                            r_tx <= i_min_x ; 
+                            r_ty <= w_simd_out[3*22-1:2*22]; 
 
+                        end
+                    end
+                end
+                else begin 
+                    r_state <= s_IDLE; 
+                    r_tx_counter <= 0 ; 
+                    r_ty_counter <= 0 ; 
+                end
             end
             s_raster_out    : begin 
                 // write to register in here if it's idle, otherwise stall here 
+                // stall and then go to tile_step 
+                r_state <= s_tile_step ;
             end
             s_shader_out    : begin 
-                
+                // queue in to fifo of the fragment shader . queue in 
+                r_state <= s_tile_step ;
             end
 
         endcase 
@@ -460,21 +532,6 @@ module ren_binner(
     .o_valid                 ( w_simd_valid                          ),
     .o_busy                  ( w_simd_busy)
     ); 
-    wire [21:0] w_tile_step_i; 
-    wire w_tile_step_en; 
-    wire [21:0] w_tile_step_o; 
-    
-    fp_add  u_tile_stepper (
-    .clk                     ( clk      ),
-    .i_en                    (w_tile_step_en),
-    .i_a                     (w_tile_step_i ),
-    .i_b                     ( {1'b0 ,5'h0f, 16'h8000}      ),
-    .i_adsb                  ( 1'b0   ),
 
-    .o_c                     ( w_tile_step_o)
-    ); // for stepping
-    // tile stepping fsm 
-    always @(posedge clk)begin 
 
-    end
 endmodule 

@@ -3,9 +3,8 @@
 // Extracts triangle coefficients & bounding boxes and other info 
 // writes to binner queue
 // implementing this edge function(from subscript0 to subscript1): a=y0-y1, b=x1-x0 , c= x0*y1-x1*y0
-// vertices already sorted by control unit
-// Latency = 6 
-// TODO add ranking order for on height 
+`include "rtl/ren_params.v"
+
 module ren_setup(
         clk, 
         // control 
@@ -63,12 +62,22 @@ module ren_setup(
         o_e2_a  , // edge 2 mid-top  
         o_e2_b  , 
         o_e2_c  , 
-        o_min_x, // bounding box 
-        o_max_x , 
+        // Tile stepping and min/max steps
+        o_min_x , 
+        o_min_y , 
+        o_steps_x ,
+        o_steps_y, 
+        // Interpolation coefficients 
+        o_cr_coeff , 
+        o_cg_coeff , 
+        o_cb_coeff , 
+        o_z_coeff ,
         // control 
         o_valid , 
+        o_shader_valid, 
         o_idle 
 );
+    // Functions
     // Ports IO 
     input clk  ; 
     input rstn ; 
@@ -120,9 +129,16 @@ module ren_setup(
     output [21:0] o_e2_b ;   
     output [21:0] o_e2_c ;   
     output [21:0] o_min_x;   
-    output [21:0] o_max_x;   
+    output [21:0] o_min_y;   
+    output [22*3-1:0] o_cr_coeff ;  
+    output [22*3-1:0] o_cg_coeff ;  
+    output [22*3-1:0] o_cb_coeff ;  
+    output [22*3-1:0] o_z_coeff ;  
+    output [15:0] o_steps_x  ;// int
+    output [15:0] o_steps_y  ; 
     output o_valid; 
     output o_idle;  
+    output o_shader_valid;
     // Constant
     localparam s_IDLE = 3'd0 ;  
     localparam s_e_a = 3'd1 ;  
@@ -131,7 +147,14 @@ module ren_setup(
     localparam s_e_c_0_1 = 3'd4 ;  // multiplication phase 2
     localparam s_e_c_1 = 3'd5 ;  // reduction (subtraction)
     localparam s_OUT = 3'd6 ;  
+     // attribute interpolation: 
+    // For now just (cr cg cb and z )
+    localparam s_attribdelta_0 = 7; 
+    localparam s_attribdelta_1 = 8; 
+    localparam s_tile_mul =9 ; // for calculating the min tile y and steps 
     // Wires
+    wire [21:0] w_min_x , w_max_x, w_min_y , w_max_y ;
+    wire [21:0] w_intermediatec_0,w_intermediatec_1,w_intermediatec_2 ,w_intermediatec_3;   // used when calculating coeff c
     // SIMD
     wire [4*22-1:0] w_simd_in0; 
     wire [4*22-1:0] w_simd_in1; 
@@ -147,7 +170,7 @@ module ren_setup(
     wire [21:0] w_e2_c_1 ;
     wire [21:0] w_e2_c_2 ;
     // Regs 
-    reg [2:0] r_state ;  
+    reg [3:0] r_state ;  
     reg [2:0] r_simd_opcode;
     reg [21:0] r_e0_a ;  
     reg [21:0] r_e0_b ;   
@@ -158,29 +181,56 @@ module ren_setup(
     reg [21:0] r_e2_a ;  
     reg [21:0] r_e2_b ;   
     reg [21:0] r_e2_c ; 
-    
+    reg [22*2-1:0] r_cr_attrib; 
+    reg [22*2-1:0] r_cg_attrib; 
+    reg [22*2-1:0] r_cb_attrib; 
+    reg [22*2-1:0] r_z_attrib; 
+    reg [21:0] r_min_tile_x ; 
+    reg [21:0] r_min_tile_y ; 
+    reg [15:0] r_steps_x; 
+    reg [15:0] r_steps_y; 
     // Assign 
-    assign w_valid = (r_state==s_OUT) ; // TODO edit this later 
-    assign o_max_x= (o_e0_b[21]) ? ((!o_e2_b[21]) ? i_vtx0_x : i_vtx1_x) : ((o_e1_b[21]) ? i_vtx2_x : i_vtx1_x) ; // e0b = vtx2-vtx0, e1b = v1-v2 , e2b = v0-v1 ## // checking sign bit 
-    assign o_min_x = (o_e0_b[21]) ? ((!o_e1_b[21]) ? i_vtx2_x : i_vtx1_x) : ((o_e2_b[21]) ? i_vtx0_x : i_vtx1_x) ;
+    assign w_intermediatec_0 = r_e0_a; 
+    assign w_intermediatec_1 = r_e1_a; 
+    assign w_intermediatec_2 = r_e2_a; 
+    assign w_intermediatec_3 = r_e0_b; 
+    assign o_shader_valid = (r_state == s_OUT); 
+    assign o_min_x ={r_min_tile_x[21], (r_min_tile_x[20:16]+$clog2(`TILE_SIZE)) ,r_min_tile_x[15:0]}; // multiplying by tile size
+    assign o_min_y = {r_min_tile_y[21], (r_min_tile_y[20:16]+$clog2(`TILE_SIZE)) ,r_min_tile_y[15:0]}; 
+
+    assign w_max_x= (o_e0_b[21]) ? ((!o_e2_b[21]) ? i_vtx0_x : i_vtx1_x) : ((o_e1_b[21]) ? i_vtx2_x : i_vtx1_x) ; // e0b = vtx2-vtx0, e1b = v1-v2 , e2b = v0-v1 ## // checking sign bit 
+    assign w_min_x = (o_e0_b[21]) ? ((!o_e1_b[21]) ? i_vtx2_x : i_vtx1_x) : ((o_e2_b[21]) ? i_vtx0_x : i_vtx1_x) ;
     assign o_idle = (r_state==s_IDLE); 
+
     // checks 
-    //assign o_max_y = (!o_e0_a[21]) ? ((o_e2_a[21]) ? i_vtx0_y : i_vtx1_y) : ((!o_e1_a[21]) ? i_vtx2_y : i_vtx1_y) ; // e0a = vtx0-vtx2, e1a = v2-v1 , e2a = v1-v0 ## // checking sign bit 
-    //assign o_min_y = (); 
+    assign w_max_y = (!o_e0_a[21]) ? ((o_e2_a[21]) ? i_vtx0_y : i_vtx1_y) : ((!o_e1_a[21]) ? i_vtx2_y : i_vtx1_y) ; // e0a = vtx0-vtx2, e1a = v2-v1 , e2a = v1-v0 ## // checking sign bit 
+    assign w_min_y = (!o_e0_b[21]) ? ((o_e1_b[21]) ? i_vtx2_y : i_vtx1_y) : ((!o_e2_b[21]) ? i_vtx0_y : i_vtx1_y) ;
     // SIMD 
     assign w_simd_enable = (r_state != 0 && r_state != s_OUT) ? 1 : 0 ; 
-    assign w_simd_in0 = (r_state == s_e_a) ? {i_vtx0_y , i_vtx2_y , i_vtx1_y, 22'b0} : 
-                        ((r_state == s_e_b)? {i_vtx2_x , i_vtx1_x , i_vtx0_x,22'd0} : 
-                        ((r_state == s_e_c_0_0) ? {i_vtx0_x , i_vtx2_x , 44'd0} : // mul phase 1 
+    assign w_simd_in0 = (r_state == s_e_a) ? {i_vtx0_y , i_vtx2_y , i_vtx1_y, i_vtx0_cr} : // adding in vertex coeff calculation
+                        ((r_state == s_e_b)? {i_vtx2_x , i_vtx1_x , i_vtx0_x,i_vtx1_cr} : 
+                        ((r_state == s_e_c_0_0) ? {i_vtx0_x , i_vtx2_x , w_min_x , w_max_y} : // mul phase 1 ,calc mintile x and max tiley
+                        ((r_state==s_tile_mul)?  {44'd0 ,   w_min_y , w_max_y }: 
                         ((r_state==s_e_c_0_1) ? {i_vtx2_x , i_vtx1_x , i_vtx1_x ,i_vtx0_x} :   // mul phase 2
-                        {r_e0_c , w_simd_out[4*22-1:3*22] , w_simd_out[2*22-1:1*22] , 22'd0})));  // subtraction
-    assign w_simd_in1 = (r_state == s_e_a) ? {i_vtx2_y , i_vtx1_y , i_vtx0_y,22'd0} : 
-                        ((r_state == s_e_b)? {i_vtx0_x , i_vtx2_x , i_vtx1_x, 22'b0} : 
-                        ((r_state == s_e_c_0_0) ? {i_vtx2_y , i_vtx0_y , 44'd0}: 
-                        ((r_state==s_e_c_0_1) ? {i_vtx1_y , i_vtx2_y ,i_vtx0_y , i_vtx1_y} :
-                        {r_e1_c ,w_simd_out[3*22-1:2*22], w_simd_out[21:0]  , 22'd0})));  
-    // SIMD END
+                        ((r_state==s_e_c_1) ? {r_e0_c , w_intermediatec_0 , w_intermediatec_2 , 22'd0} : // subtraction
+                        ((r_state==s_attribdelta_0) ? {i_vtx0_cg , i_vtx1_cg , i_vtx0_cb ,i_vtx1_cb} : 
+                        ((r_state==s_attribdelta_1) ? {i_vtx0_z , i_vtx1_z, 44'd0} : // calculating min tile y and max tile y 
+                        0)))))));  
 
+    assign w_simd_in1 = (r_state == s_e_a) ? {i_vtx2_y , i_vtx1_y , i_vtx0_y,i_vtx2_cr} : 
+                        ((r_state == s_e_b)? {i_vtx0_x , i_vtx2_x , i_vtx1_x, i_vtx2_cr} : 
+                        ((r_state == s_e_c_0_0) ? {i_vtx2_y , i_vtx0_y , `fpTILE_SIZE_rc , `fpTILE_SIZE_rc }: 
+                        ((r_state==s_tile_mul)? {44'd0 ,`fpTILE_SIZE_rc , `fpTILE_SIZE_rc} : 
+                        ((r_state==s_e_c_0_1) ? {i_vtx1_y , i_vtx2_y ,i_vtx0_y , i_vtx1_y} :
+                        
+                        ((r_state==s_e_c_1) ? {r_e1_c ,w_intermediatec_1, w_intermediatec_3  , 22'd0} : // this needs to chagne
+                        ((r_state==s_attribdelta_0) ? {i_vtx2_cg , i_vtx2_cg , i_vtx2_cb ,i_vtx2_cb} : 
+                        ((r_state==s_attribdelta_1) ? {i_vtx2_z , i_vtx2_z, 44'd0} : 
+                        0)))))));    
+    // SIMD END
+    // Tile 
+    
+    //output
     assign  o_vtx0_x  =  i_vtx0_x ; 
     assign  o_vtx0_y  =  i_vtx0_y ; 
     assign  o_vtx0_z  =  i_vtx0_z ; 
@@ -209,6 +259,13 @@ module ren_setup(
     assign o_e2_b =  r_e2_b;   
     assign o_e2_c =  r_e2_c;  
     assign o_valid = (r_state == s_OUT) ; 
+    assign o_cr_coeff = {r_cr_attrib , i_vtx2_cr} ; 
+    assign o_cg_coeff = {r_cg_attrib , i_vtx2_cg} ; 
+    assign o_cb_coeff = {r_cb_attrib , i_vtx2_cb} ; 
+    assign o_z_coeff = {r_z_attrib , i_vtx2_z} ; 
+    assign o_steps_x = r_steps_x; 
+    assign o_steps_y = r_steps_y; 
+
     // Always Blocks              
   always @(posedge clk or negedge rstn) begin
     if (rstn) 
@@ -217,8 +274,47 @@ module ren_setup(
         case (r_state)
             s_IDLE: begin 
                 if (i_en ) begin 
+                    r_state <= s_e_c_0_0; 
+                    r_simd_opcode <= 2 ; // sub
+                end
+            end
+            s_e_c_0_0:begin 
+                if(w_simd_valid) begin 
+                    // move to next state and load coeff register
+                    r_e0_c <= w_simd_out[4*22-1:3*22]; 
+                    r_e1_c <= w_simd_out[3*22-1:2*22]; 
+                    
+                    r_min_tile_x <= {1'b0, w_floor_o_1 } ;
+                    r_steps_x <= (w_ftoi_o_2 - w_ftoi_o_1) ;  
+                    r_state <= s_tile_mul;
+                end
+            end
+            s_tile_mul: begin 
+                if(w_simd_valid) begin 
+                    r_min_tile_y <= {1'b0, w_floor_o_1 } ;
+                    r_steps_y <= (w_ftoi_o_2 - w_ftoi_o_1) ;  
+                    r_state <= s_e_c_0_1;
+                end
+            end
+            s_e_c_0_1:begin 
+                if(w_simd_valid) begin 
+                    // move to next state and load coeff register
+                    r_simd_opcode <= 3'b001; // subtraction
+                    r_e0_a <= w_simd_out[4*22-1:3*22]; 
+                    r_e1_a <= w_simd_out[3*22-1:2*22]; 
+                    r_e2_a <= w_simd_out[2*22-1:1*22]; 
+                    r_e0_b <= w_simd_out[1*22-1:0*22]; 
+                    r_state <= s_e_c_1;
+                end 
+            end
+            s_e_c_1:begin 
+                if(w_simd_valid) begin 
+                    // move to next state and load coeff register
+                    r_e0_c <= w_simd_out[4*22-1:3*22]; 
+                    r_e1_c <= w_simd_out[3*22-1:2*22]; 
+                    r_e2_c <= w_simd_out[2*22-1:1*22]; 
                     r_state <= s_e_a; 
-                    r_simd_opcode <= 1 ; // sub
+                    r_simd_opcode <= 3'b001; 
                 end
             end
             s_e_a: begin 
@@ -227,6 +323,7 @@ module ren_setup(
                     r_e0_a <= w_simd_out[4*22-1:3*22]; 
                     r_e1_a <= w_simd_out[3*22-1:2*22]; 
                     r_e2_a <= w_simd_out[2*22-1:1*22]; 
+                    r_cr_attrib[2*22-1:1*22] <= w_simd_out[21:0]; 
                     r_state <= s_e_b;
                 end
             end
@@ -236,33 +333,22 @@ module ren_setup(
                     r_e0_b <= w_simd_out[4*22-1:3*22]; 
                     r_e1_b <= w_simd_out[3*22-1:2*22]; 
                     r_e2_b <= w_simd_out[2*22-1:1*22]; 
-                    r_state <= s_e_c_0_0;
-                    r_simd_opcode <= 2; // mul
+                    r_cr_attrib[1*22-1:0*22] <= w_simd_out[21:0]; 
+                    r_state <= s_attribdelta_0;
+                    r_simd_opcode <= 3'b001; // sub
                 end
             end
-            s_e_c_0_0:begin 
-                if(w_simd_valid) begin 
-                    // move to next state and load coeff register
-                    r_e0_c <= w_simd_out[4*22-1:3*22]; 
-                    r_e1_c <= w_simd_out[3*22-1:2*22]; 
-                    r_state <= s_e_c_0_1;
+            
+            s_attribdelta_0: begin 
+                if (w_simd_valid) begin 
+                    r_cg_attrib <= w_simd_out[4*22-1:2*22]; 
+                    r_cb_attrib <= w_simd_out[2*22-1:0*22]; 
+                    r_state <= s_attribdelta_1; 
                 end
-                
             end
-            s_e_c_0_1:begin 
-                if(w_simd_valid) begin 
-                    // move to next state and load coeff register
-                    r_simd_opcode <= 3'b001; // subtraction
-                    r_state <= s_e_c_1;
-                end
-               
-            end
-            s_e_c_1:begin 
-                if(w_simd_valid) begin 
-                    // move to next state and load coeff register
-                    r_e0_c <= w_simd_out[4*22-1:3*22]; 
-                    r_e1_c <= w_simd_out[3*22-1:2*22]; 
-                    r_e2_c <= w_simd_out[2*22-1:1*22]; 
+            s_attribdelta_1: begin 
+                if (w_simd_valid) begin 
+                    r_z_attrib<= w_simd_out[4*22-1:2*22]; 
                     r_state <= s_OUT; 
                 end
             end
@@ -287,137 +373,32 @@ module ren_setup(
     .o_valid                 ( w_simd_valid                          ),
     .o_busy                  ( w_simd_busy)
     ); 
-    // old 
-    // delay 6 o_valid 
-    //ren_delay #(
-    //.P_WIDTH     ( 1 ),
-    //.P_NUM_DELAY ( 6 )) u_ren_delay (
-    //    .clk                     ( clk      ),
-    //    .i_en                    ( w_valid ) ,
-    //    .i_data                  ( w_valid  ),
-    //    .o_data                  ( o_valid  ) 
-    //);
-    // edge 0 
-/*
-    fp_add  u_a_coeff (
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx0_y), 
-    .i_b                     ( i_vtx2_y),
-    .i_adsb                  ( 1'b1),// subtract
-    .o_c                     ( o_e0_a)
+    wire [20:0]  w_floor_1;
+    wire  [20:0]  w_floor_o_1;
+    wire [20:0]  w_floor_2;
+    wire  [20:0]  w_floor_o_2;
+    assign w_floor_1 = w_simd_out[2*22-2:22]; 
+    assign w_floor_2 = w_simd_out[1*22-2:0]; 
+    fp_floor  u_fp_floor1 (
+        .i_a                     ( w_floor_1),
+        .o_b                     ( w_floor_o_1)
+    );  
+    fp_floor  u_fp_floor2 (
+        .i_a                     ( w_floor_2),
+        .o_b                     ( w_floor_o_2)
+    );  
+    wire [21:0]  w_ftoi_1;
+    wire [15:0]  w_ftoi_o_1;
+    wire [21:0]  w_ftoi_2;
+    wire [15:0]  w_ftoi_o_2;
+    assign w_ftoi_1 = {1'b0, w_floor_o_1}; 
+    assign w_ftoi_2 = {1'b0, w_floor_o_2}; 
+    fp_to_int  u_fp_to_int1 (
+        .i_a                     ( w_ftoi_1 ),
+        .o_c                     ( w_ftoi_o_1)
     );
-    fp_add  u_b_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx2_x),
-    .i_b                     ( i_vtx0_x),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e0_b)
+    fp_to_int  u_fp_to_int2 (
+        .i_a                     ( w_ftoi_2 ),
+        .o_c                     ( w_ftoi_o_2  ) 
     );
-    //x0*y1 - x1*y0 // delay 3 mul + 3 add (delay 6)
-    fp_mul  u_fp_c0mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx0_x),
-    .i_b                     ( i_vtx2_y),
-    .o_c                     ( w_e0_c_1)
-    );
-    fp_mul  u_fp_c1mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx2_x),
-    .i_b                     ( i_vtx0_y),
-    .o_c                     ( w_e0_c_2)
-    );
-    fp_add  u_c_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( w_e0_c_1 ),
-    .i_b                     ( w_e0_c_2 ),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e0_c)
-    );
-
-    // edge 1
-    fp_add  u1_a_coeff (
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx2_y),
-    .i_b                     ( i_vtx1_y),
-    .i_adsb                  ( 1'b1),// subtract
-    .o_c                     ( o_e1_a)
-    );
-    fp_add  u1_b_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx1_x),
-    .i_b                     ( i_vtx2_x),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e1_b)
-    );
-    //x0*y1 - x1*y0 // delay 3 mul + 3 add (delay 6)
-    fp_mul  u1_fp_c0mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx2_x),
-    .i_b                     ( i_vtx1_y),
-    .o_c                     ( w_e1_c_1)
-    );
-    fp_mul  u1_fp_c1mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx1_x),
-    .i_b                     ( i_vtx2_y),
-    .o_c                     ( w_e1_c_2)
-    );
-    fp_add  u1_c_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( w_e1_c_1 ),
-    .i_b                     ( w_e1_c_2 ),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e1_c)
-    );
-    // edge 2
-    fp_add  u2_a_coeff (
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx1_y),
-    .i_b                     ( i_vtx0_y),
-    .i_adsb                  ( 1'b1),// subtract
-    .o_c                     ( o_e2_a)
-    );
-    fp_add  u2_b_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx0_x),
-    .i_b                     ( i_vtx1_x),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e2_b)
-    );
-    //x0*y1 - x1*y0 // delay 3 mul + 3 add (delay 6)
-    fp_mul  u2_fp_c0mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx1_x),
-    .i_b                     ( i_vtx0_y),
-    .o_c                     ( w_e2_c_1)
-    );
-    fp_mul  u2_fp_c1mul (
-    .clk                     ( clk    ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( i_vtx0_x),
-    .i_b                     ( i_vtx1_y),
-    .o_c                     ( w_e2_c_2)
-    );
-    fp_add  u2_c_coeff ( 
-    .clk                     ( clk      ),
-    .i_en                    ( 1'b1),
-    .i_a                     ( w_e2_c_1 ),
-    .i_b                     ( w_e2_c_2 ),
-    .i_adsb                  ( 1'b1),
-    .o_c                     ( o_e2_c)
-    );
-*/
 endmodule 

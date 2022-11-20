@@ -16,6 +16,7 @@ module FP_SIMD(
     i_in1 , 
     i_in2 ,
     o_output , 
+    o_reg_out, 
     o_busy , 
     o_valid 
     );
@@ -27,6 +28,7 @@ module FP_SIMD(
     input [(SIMD_WIDTH*22)- 1:0] i_in1; 
     input [(SIMD_WIDTH*22)-1:0] i_in2; 
     output [(SIMD_WIDTH*22)-1:0] o_output; 
+    output [(SIMD_WIDTH*22)-1:0] o_reg_out; 
     input [2:0] i_opcode ; // any different combination 
     output o_valid; 
     output o_busy ; 
@@ -49,6 +51,8 @@ module FP_SIMD(
     localparam op_rcp =  3 ; 
     localparam op_reduce_add = 4 ; 
     localparam op_reduce_mul = 5 ; 
+    localparam op_load_1 = 6; 
+    localparam op_load_2 = 7; 
     
     // wires 
     wire w_adder_en  ; 
@@ -73,6 +77,7 @@ module FP_SIMD(
 
     //assigns 
     assign w_adder_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==0) ? 1 : 0); 
+    assign o_reg_out = {r_result[0] ,r_result[1], r_result[2], r_result[3]}; 
     assign w_rcp_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b10) ? 1 : 0); 
     assign w_multiplier_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b01) ? 1 : 0); 
     for (genvar j = 0 ; j <SIMD_WIDTH ; j = j+1 )begin 
@@ -115,27 +120,47 @@ module FP_SIMD(
                         // on input
                         3'b000: begin // add in 
                             r_out_selector <= 0 ; 
+                            r_state <= s_S0_0; 
                         end
                         3'b001: begin // subtract in 
                             r_out_selector <= 0 ; 
+                            r_state <= s_S0_0; 
                         end
                         3'b010: begin // mul in 
                             r_out_selector <= 1; 
+                            r_state <= s_S0_0; 
                         end
                         3'b011: begin // rcp 
                             r_out_selector <= 2; 
+                            r_state <= s_S0_0; 
                         end
                         3'b100: begin // reduce add 
                             r_out_selector <= 0; 
+                            r_state <= s_S0_0; 
                         end
                         3'b101: begin // reduce mul
                             r_out_selector <= 1; 
+                            r_state <= s_S0_0; 
+                        end
+                        3'b110: begin // load reg1
+                            r_out_selector <= 3; 
+                            r_result[0] <= i_in1[4*22-1: 3*22]; 
+                            r_result[1] <= i_in1[3*22-1: 2*22]; 
+                            r_result[2] <= i_in1[2*22-1: 1*22]; 
+                            r_result[3] <= i_in1[1*22-1: 0*22]; 
+                        end
+                        3'b111: begin // load reg2
+                            r_out_selector <= 3; 
+                            r_result[0] <= i_in2[4*22-1: 3*22]; 
+                            r_result[1] <= i_in2[3*22-1: 2*22]; 
+                            r_result[2] <= i_in2[2*22-1: 1*22]; 
+                            r_result[3] <= i_in2[1*22-1: 0*22]; 
                         end
                         default: begin 
                             r_out_selector <= 3; 
                         end
                     endcase 
-                     r_state <= s_S0_0; 
+                     
                 end else 
                     r_state <= s_IDLE; 
             end
