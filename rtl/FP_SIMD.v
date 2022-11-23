@@ -45,6 +45,7 @@ module FP_SIMD(
     localparam s_S1_2 = 6 ; 
     localparam s_OUT  = 7; // update inner reg
     localparam s_REGUPDATE  = 8; // update inner reg
+
     localparam op_add = 0 ; 
     localparam op_sub= 1 ; 
     localparam op_mul = 2 ; 
@@ -108,7 +109,7 @@ module FP_SIMD(
     assign o_valid = (r_state==s_OUT) ? 1 : 0 ; 
     //always
     always @(posedge clk or negedge rst_n) begin
-        if (rst_n)begin 
+        if (!rst_n)begin 
          //   r_result <= 0 ; 
             r_state <= s_IDLE ; 
         end
@@ -207,6 +208,7 @@ module FP_SIMD(
                 r_result[3]<= o_output[(SIMD_WIDTH-3)*22-1: (SIMD_WIDTH-3)*22 - 1 -21]; 
                 r_state <= s_IDLE ; 
             end 
+           
             default: begin 
                 r_state <= s_IDLE; 
             end

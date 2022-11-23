@@ -67,4 +67,15 @@ calculation of basis functions
 for basis functions we can calculate each func in 2 steps per point 
 or 4 points in 4 steps 
 
-calculation of paraneterization coefficients 
+F0 answers stored in r_basis_F0 
+F1 stored in r_basis_F1
+F2 stored in r_intermediate
+r calculation
+add f0 and f1 
+use w_simd_reg + r_intermediate and then store in intermediate after rcp 
+
+
+calculation of paraneterization coefficients  
+
+determining the position in the loop im in 
+if i have a n 
