@@ -8,7 +8,8 @@ module ren_binner(
     // control
     i_en,  
     rstn, 
-    i_valid , 
+    i_valid ,
+    i_ack_r ,  // raster acknoledgement
     // inputs 
     i_e0_a  , 
     i_e0_b  , 
@@ -24,13 +25,15 @@ module ren_binner(
     i_step_x, 
     i_step_y, 
     // reaster in 
-    i_busy_r , 
+    i_busy_r , // raster busy ( stall )
     i_full , // fifo (stall)
     // outputs
     o_tile_x , 
     o_tile_y , 
-    o_tile_size, 
-    o_busy 
+    o_tile_size,
+    o_valid_r , // ctrl for raster out  
+    o_busy , 
+    o_fifo_write 
 ) ;
     // PORTS IO 
     input clk ;     
@@ -52,11 +55,13 @@ module ren_binner(
     input [21:0] i_min_y; 
     input [21:0] i_step_x; 
     input [21:0] i_step_y; 
-
+    input i_ack_r ; 
     output [21:0] o_tile_x ; 
     output [21:0] o_tile_y ; 
-    output o_tile_size; 
+    output [15:0] o_tile_size; 
+    output o_valid_r; 
     output o_busy; 
+    output o_fifo_write ; 
     // Constant 
     // FSM : s_STAGE_OPERATION(_#)// in sequential order 
     localparam op_add = 0 ; 
@@ -183,6 +188,11 @@ module ren_binner(
     1))))))))))))))))))); 
     assign w_tr_tile = 0; // ors less than 0
     assign w_ta_tile = 0; // and over 0 
+    assign o_tile_size = `TILE_SIZE ; 
+    assign o_valid_r = (r_state == s_raster_out) ? 1 : 0 ;  
+    assign o_tile_x = r_tx ; 
+    assign o_tile_x = r_ty  ; 
+    assign o_fifo_write = (r_state == s_shader_out) ? 1 : 0 ; 
     // Always 
 
     // Module instantiation
@@ -199,8 +209,7 @@ module ren_binner(
     assign w_corner_offsets[1] = {1'b0, 5'b10011 , 16'h8000, 22'd0};//{ TILE_SIZE, 0.f },            /LR
     assign w_corner_offsets[2] = {22'd0 ,1'b0, 5'b10011 , 16'h8000 };//{ 0.f, TILE_SIZE },        /UL
     assign w_corner_offsets[3] = {1'b0, 5'b10011 , 16'h8000,1'b0, 5'b10011 , 16'h8000};//{ TILE_SIZE , TILE_SIZE} // UR
-
-
+    
     // offsets 
     /*{ 0.f, 0.f},                                            // LL
     { TILE_SIZE, 0.f },                     // LR
@@ -486,7 +495,7 @@ module ren_binner(
                 end
             end
             s_tile_step: begin 
-                if (r_ty_counter < i_step_y) begin 
+                if (r_ty_counter < i_step_y || r_tx_counter < i_step_x) begin 
                     if(w_simd_valid) begin 
                         r_state <= s_efunc_tr_add_0; 
                         if (r_tx_counter < i_step_x) begin 
@@ -496,7 +505,6 @@ module ren_binner(
                             // load simd output to ty and reset r_tx
                             r_tx <= i_min_x ; 
                             r_ty <= w_simd_out[3*22-1:2*22]; 
-
                         end
                     end
                 end
@@ -509,13 +517,19 @@ module ren_binner(
             s_raster_out    : begin 
                 // write to register in here if it's idle, otherwise stall here 
                 // stall and then go to tile_step 
-                r_state <= s_tile_step ;
+                if (i_busy_r)  
+                    r_state <= s_raster_out ; 
+                else if (i_ack_r) begin // recieved the tile x and y 
+                    r_state <= s_tile_step ; 
+                end
             end
             s_shader_out    : begin 
                 // queue in to fifo of the fragment shader . queue in 
-                r_state <= s_tile_step ;
+                if (i_full)
+                    r_state <= s_shader_out; 
+                else 
+                    r_state <= s_tile_step ;
             end
-
         endcase 
         
     end

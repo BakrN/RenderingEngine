@@ -4,7 +4,7 @@
 // writes to binner queue
 // implementing this edge function(from subscript0 to subscript1): a=y0-y1, b=x1-x0 , c= x0*y1-x1*y0
 `include "rtl/ren_params.v"
-
+//`include "ren_params.v" // vivado 
 module ren_setup(
         clk, 
         // control 
@@ -12,19 +12,19 @@ module ren_setup(
         i_en, 
         i_busy, // from fifo 
         //triangle data (TODO could add more data in the future)
-        i_vtx0_x , // top 
+        i_vtx0_x , 
         i_vtx0_y , 
         i_vtx0_z , 
         i_vtx0_cr, 
         i_vtx0_cg, 
         i_vtx0_cb, 
-        i_vtx1_x , // mid
+        i_vtx1_x , 
         i_vtx1_y , 
         i_vtx1_z , 
         i_vtx1_cr, 
         i_vtx1_cg, 
         i_vtx1_cb, 
-        i_vtx2_x , // bottom
+        i_vtx2_x , 
         i_vtx2_y , 
         i_vtx2_z , 
         i_vtx2_cr, 
@@ -32,34 +32,34 @@ module ren_setup(
         i_vtx2_cb, 
         //outputs 
         // vertex 
-        o_vtx0_x , // top 
+        o_vtx0_x , 
         o_vtx0_y , 
         o_vtx0_z , 
         o_vtx0_cr, 
         o_vtx0_cg, 
         o_vtx0_cb, 
-        o_vtx1_x , // mid
+        o_vtx1_x ,
         o_vtx1_y , 
         o_vtx1_z , 
         o_vtx1_cr, 
         o_vtx1_cg, 
         o_vtx1_cb, 
-        o_vtx2_x , // bottom
+        o_vtx2_x ,
         o_vtx2_y , 
         o_vtx2_z , 
         o_vtx2_cr, 
         o_vtx2_cg, 
         o_vtx2_cb, 
         // triangle info 
-        o_e0_a  , // edge 0 top-bottom
+        o_e0_a  , 
         o_e0_b  , 
         o_e0_c  , 
 
-        o_e1_a  , // edge 1 bottom-mid  
+        o_e1_a  , 
         o_e1_b  , 
         o_e1_c  , 
 
-        o_e2_a  , // edge 2 mid-top  
+        o_e2_a  , 
         o_e2_b  , 
         o_e2_c  , 
         // Tile stepping and min/max steps
@@ -74,7 +74,6 @@ module ren_setup(
         o_z_coeff ,
         // control 
         o_valid , 
-        o_shader_valid, 
         o_idle 
 );
     // Functions
@@ -138,20 +137,19 @@ module ren_setup(
     output [15:0] o_steps_y  ; 
     output o_valid; 
     output o_idle;  
-    output o_shader_valid;
     // Constant
-    localparam s_IDLE = 3'd0 ;  
-    localparam s_e_a = 3'd1 ;  
-    localparam s_e_b = 3'd2 ;  
-    localparam s_e_c_0_0 = 3'd3 ;  // multiplication phase 1
-    localparam s_e_c_0_1 = 3'd4 ;  // multiplication phase 2
-    localparam s_e_c_1 = 3'd5 ;  // reduction (subtraction)
-    localparam s_OUT = 3'd6 ;  
+    localparam s_IDLE    = 4'd0 ;  
+    localparam s_e_a     = 4'd1 ;  
+    localparam s_e_b     = 4'd2 ;  
+    localparam s_e_c_0_0 = 4'd3 ;  // multiplication phase 1
+    localparam s_e_c_0_1 = 4'd4 ;  // multiplication phase 2
+    localparam s_e_c_1   = 4'd5 ;  // reduction (subtraction)
+    localparam s_OUT     = 4'd6 ;  
      // attribute interpolation: 
     // For now just (cr cg cb and z )
-    localparam s_attribdelta_0 = 7; 
-    localparam s_attribdelta_1 = 8; 
-    localparam s_tile_mul =9 ; // for calculating the min tile y and steps 
+    localparam s_attribdelta_0 = 4'd7 ; 
+    localparam s_attribdelta_1 = 4'd8 ; 
+    localparam s_tile_mul      = 4'd9 ; // for calculating the min tile y and steps 
     // Wires
     wire [21:0] w_min_x , w_max_x, w_min_y , w_max_y ;
     wire [21:0] w_intermediatec_0,w_intermediatec_1,w_intermediatec_2 ,w_intermediatec_3;   // used when calculating coeff c
@@ -162,6 +160,7 @@ module ren_setup(
     wire w_simd_enable ;
     wire w_simd_valid; 
     wire w_simd_busy; 
+    wire w_simd_rstn; 
     // SIMD END
     wire [21:0] w_e0_c_1 ;
     wire [21:0] w_e0_c_2 ;
@@ -203,29 +202,30 @@ module ren_setup(
     assign o_idle = (r_state==s_IDLE); 
 
     // checks 
-    assign w_max_y = (!o_e0_a[21]) ? ((o_e2_a[21]) ? i_vtx0_y : i_vtx1_y) : ((!o_e1_a[21]) ? i_vtx2_y : i_vtx1_y) ; // e0a = vtx0-vtx2, e1a = v2-v1 , e2a = v1-v0 ## // checking sign bit 
-    assign w_min_y = (!o_e0_b[21]) ? ((o_e1_b[21]) ? i_vtx2_y : i_vtx1_y) : ((!o_e2_b[21]) ? i_vtx0_y : i_vtx1_y) ;
+    assign w_min_y=  (o_e0_a[21]) ? ((!o_e2_a[21]) ? i_vtx0_y : i_vtx1_y) : ((o_e1_a[21]) ? i_vtx2_y : i_vtx1_y) ; // e0a = vtx0-vtx2, e1a = v2-v1 , e2a = v1-v0 ## // checking sign bit
+    assign w_max_y = (o_e0_a[21]) ? ((!o_e1_a[21]) ? i_vtx2_y : i_vtx1_y) : ((o_e2_a[21]) ? i_vtx0_y : i_vtx1_y); // v2>v0  ? (check if v2 > v1 ? v2 : v1) : 
     // SIMD 
+    assign w_simd_rstn = w_simd_enable; 
     assign w_simd_enable = (r_state != 0 && r_state != s_OUT) ? 1 : 0 ; 
-    assign w_simd_in0 = (r_state == s_e_a) ? {i_vtx0_y , i_vtx2_y , i_vtx1_y, i_vtx0_cr} : // adding in vertex coeff calculation
-                        ((r_state == s_e_b)? {i_vtx2_x , i_vtx1_x , i_vtx0_x,i_vtx1_cr} : 
-                        ((r_state == s_e_c_0_0) ? {i_vtx0_x , i_vtx2_x , w_min_x , w_max_y} : // mul phase 1 ,calc mintile x and max tiley
-                        ((r_state==s_tile_mul)?  {44'd0 ,   w_min_y , w_max_y }: 
-                        ((r_state==s_e_c_0_1) ? {i_vtx2_x , i_vtx1_x , i_vtx1_x ,i_vtx0_x} :   // mul phase 2
-                        ((r_state==s_e_c_1) ? {r_e0_c , w_intermediatec_0 , w_intermediatec_2 , 22'd0} : // subtraction
-                        ((r_state==s_attribdelta_0) ? {i_vtx0_cg , i_vtx1_cg , i_vtx0_cb ,i_vtx1_cb} : 
-                        ((r_state==s_attribdelta_1) ? {i_vtx0_z , i_vtx1_z, 44'd0} : // calculating min tile y and max tile y 
+    assign w_simd_in0 = (r_state == s_e_a) ? {i_vtx0_y[21:0] , i_vtx2_y[21:0] , i_vtx1_y[21:0], i_vtx0_cr[21:0]} : // adding in vertex coeff calculationf
+                        ((r_state == s_e_b)? {i_vtx2_x[21:0] , i_vtx1_x[21:0] , i_vtx0_x[21:0],i_vtx1_cr[21:0]} : 
+                        ((r_state == s_e_c_0_0) ? {i_vtx0_x[21:0] , i_vtx2_x[21:0] , w_min_x[21:0] , w_max_x[21:0]} : // mul phase 1 ,calc mintile x and max tiley
+                        ((r_state==s_tile_mul)?  {44'd0 ,   w_min_y[21:0] , w_max_y[21:0] }: 
+                        ((r_state==s_e_c_0_1) ? {i_vtx2_x[21:0] , i_vtx1_x[21:0] , i_vtx1_x[21:0] ,i_vtx0_x[21:0]} :   // mul phase 2
+                        ((r_state==s_e_c_1) ? {r_e0_c [21:0], w_intermediatec_0 [21:0], w_intermediatec_2 [21:0], 22'd0} : // subtraction
+                        ((r_state==s_attribdelta_0) ? {i_vtx0_cg [21:0], i_vtx1_cg[21:0] , i_vtx0_cb[21:0] ,i_vtx1_cb[21:0]} : 
+                        ((r_state==s_attribdelta_1) ? {i_vtx0_z[21:0] , i_vtx1_z[21:0], 44'd0} : // calculating min tile y and max tile y 
                         0)))))));  
 
-    assign w_simd_in1 = (r_state == s_e_a) ? {i_vtx2_y , i_vtx1_y , i_vtx0_y,i_vtx2_cr} : 
-                        ((r_state == s_e_b)? {i_vtx0_x , i_vtx2_x , i_vtx1_x, i_vtx2_cr} : 
-                        ((r_state == s_e_c_0_0) ? {i_vtx2_y , i_vtx0_y , `fpTILE_SIZE_rc , `fpTILE_SIZE_rc }: 
+    assign w_simd_in1 = (r_state == s_e_a) ? {i_vtx2_y[21:0] , i_vtx1_y[21:0] , i_vtx0_y[21:0],i_vtx2_cr[21:0]} : 
+                        ((r_state == s_e_b)? {i_vtx0_x [21:0], i_vtx2_x [21:0], i_vtx1_x[21:0], i_vtx2_cr[21:0]} : 
+                        ((r_state == s_e_c_0_0) ? {i_vtx2_y[21:0] , i_vtx0_y[21:0] , `fpTILE_SIZE_rc , `fpTILE_SIZE_rc }: 
                         ((r_state==s_tile_mul)? {44'd0 ,`fpTILE_SIZE_rc , `fpTILE_SIZE_rc} : 
-                        ((r_state==s_e_c_0_1) ? {i_vtx1_y , i_vtx2_y ,i_vtx0_y , i_vtx1_y} :
+                        ((r_state==s_e_c_0_1) ? {i_vtx1_y[21:0] , i_vtx2_y[21:0] ,i_vtx0_y[21:0] , i_vtx1_y[21:0]} :
                         
-                        ((r_state==s_e_c_1) ? {r_e1_c ,w_intermediatec_1, w_intermediatec_3  , 22'd0} : // this needs to chagne
-                        ((r_state==s_attribdelta_0) ? {i_vtx2_cg , i_vtx2_cg , i_vtx2_cb ,i_vtx2_cb} : 
-                        ((r_state==s_attribdelta_1) ? {i_vtx2_z , i_vtx2_z, 44'd0} : 
+                        ((r_state==s_e_c_1) ? {r_e1_c[21:0] ,w_intermediatec_1[21:0], w_intermediatec_3[21:0]  , 22'd0} : // this needs to chagne
+                        ((r_state==s_attribdelta_0) ? {i_vtx2_cg[21:0] , i_vtx2_cg[21:0] , i_vtx2_cb[21:0] ,i_vtx2_cb[21:0]} : 
+                        ((r_state==s_attribdelta_1) ? {i_vtx2_z[21:0] , i_vtx2_z[21:0], 44'd0} : 
                         0)))))));    
     // SIMD END
     // Tile 
@@ -265,17 +265,16 @@ module ren_setup(
     assign o_z_coeff = {r_z_attrib , i_vtx2_z} ; 
     assign o_steps_x = r_steps_x; 
     assign o_steps_y = r_steps_y; 
-
     // Always Blocks              
   always @(posedge clk or negedge rstn) begin
-    if (rstn) 
+    if (!rstn) 
         r_state <= s_IDLE; 
     else begin 
         case (r_state)
             s_IDLE: begin 
                 if (i_en ) begin 
                     r_state <= s_e_c_0_0; 
-                    r_simd_opcode <= 2 ; // sub
+                    r_simd_opcode <= `op_mul ;
                 end
             end
             s_e_c_0_0:begin 
@@ -283,7 +282,6 @@ module ren_setup(
                     // move to next state and load coeff register
                     r_e0_c <= w_simd_out[4*22-1:3*22]; 
                     r_e1_c <= w_simd_out[3*22-1:2*22]; 
-                    
                     r_min_tile_x <= {1'b0, w_floor_o_1 } ;
                     r_steps_x <= (w_ftoi_o_2 - w_ftoi_o_1) ;  
                     r_state <= s_tile_mul;
@@ -314,7 +312,7 @@ module ren_setup(
                     r_e1_c <= w_simd_out[3*22-1:2*22]; 
                     r_e2_c <= w_simd_out[2*22-1:1*22]; 
                     r_state <= s_e_a; 
-                    r_simd_opcode <= 3'b001; 
+                    r_simd_opcode <= `op_sub; 
                 end
             end
             s_e_a: begin 
@@ -335,7 +333,6 @@ module ren_setup(
                     r_e2_b <= w_simd_out[2*22-1:1*22]; 
                     r_cr_attrib[1*22-1:0*22] <= w_simd_out[21:0]; 
                     r_state <= s_attribdelta_0;
-                    r_simd_opcode <= 3'b001; // sub
                 end
             end
             
@@ -363,7 +360,7 @@ module ren_setup(
     // module instantiation 
     FP_SIMD  u_FP_SIMD (
     .clk                     ( clk                              ),
-    .rst_n                   ( rst_n                            ),
+    .rst_n                   ( w_simd_rstn                            ),
     .i_en                    ( w_simd_enable                             ),
     .i_in1                   ( w_simd_in0  ),
     .i_in2                   ( w_simd_in1 ),

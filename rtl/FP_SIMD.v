@@ -82,14 +82,14 @@ module FP_SIMD(
     assign w_rcp_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b10) ? 1 : 0); 
     assign w_multiplier_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b01) ? 1 : 0); 
     for (genvar j = 0 ; j <SIMD_WIDTH ; j = j+1 )begin 
-        assign o_output[(SIMD_WIDTH-j)*22 -1:(SIMD_WIDTH-j)*22 -1-21] = (r_out_selector==0) ? w_add_out[j] : ((r_out_selector==1)?w_mul_out[j] :((r_out_selector==2) ? w_rcp_out[j]: r_result[j])); 
+        assign o_output[(SIMD_WIDTH-j)*22 -1:(SIMD_WIDTH-j-1)*22] = (r_out_selector==0) ? w_add_out[j] : ((r_out_selector==1)?w_mul_out[j] :((r_out_selector==2) ? w_rcp_out[j]: r_result[j])); 
     end 
     assign w_subtraction = (i_opcode==op_sub) ? 1 : 0 ; 
     
     // opcodes  = 000: add in, 001: sub in,  010: mul in , 011: rcp  , 100: reduce , 101: reduce_mul 
     for (genvar j = 0 ; j <SIMD_WIDTH; j = j+1) begin
-        assign w_add_ia[j]= (i_opcode[j] == 1) ? r_result[j] : i_in1[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ; 
-        assign w_mul_ia[j] = (i_opcode[j] == 1) ? r_result[j] :  i_in1[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ;
+        assign w_add_ia[j] = (i_opcode[2] == 1) ? r_result[j] : i_in1[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+        assign w_mul_ia[j] = (i_opcode[2] == 1) ? r_result[j] : i_in1[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ; 
         assign w_rcp[j] =  r_result[j] ;
         if (j== 2)begin 
             assign w_add_ib[j]= (i_opcode[2] == 1 ) ?  r_result[j+1] :i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
@@ -98,12 +98,11 @@ module FP_SIMD(
             assign w_add_ib[j]= (i_opcode[2] == 1) ? ((r_state <4)? r_result[j+1] : r_result[j+2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
             assign w_mul_ib[j] = (i_opcode[2] == 1) ? ((r_state <4)? r_result[j+1] : r_result[j+2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
         end else begin 
-            assign w_add_ib[j]=  i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+            assign w_add_ib[j]=   i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
             assign w_mul_ib[j] =  i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ; 
         end
     end 
-    for (genvar j = 0 ; j <SIMD_WIDTH-1; j = j+1) begin
-            end
+    
     
     assign o_busy = (r_state==s_IDLE) ? 0 : 1 ; 
     assign o_valid = (r_state==s_OUT) ? 1 : 0 ; 
@@ -216,7 +215,7 @@ module FP_SIMD(
         end
     end
     // module instantiation
-    generate for (genvar i = 0 ; i<3; i = i+1) begin 
+    generate for (genvar i = 0 ; i<4; i = i+1) begin 
           
     // latency 3
     fp_add  u_add(
