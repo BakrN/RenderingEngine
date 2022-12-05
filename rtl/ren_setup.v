@@ -3,8 +3,8 @@
 // Extracts triangle coefficients & bounding boxes and other info 
 // writes to binner queue
 // implementing this edge function(from subscript0 to subscript1): a=y0-y1, b=x1-x0 , c= x0*y1-x1*y0
-`include "rtl/ren_params.v"
-//`include "ren_params.v" // vivado 
+`include "rtl/ren_params.sv"
+//`include "ren_params.sv" // vivado 
 module ren_setup(
         clk, 
         // control 

@@ -79,3 +79,6 @@ calculation of paraneterization coefficients
 
 determining the position in the loop im in 
 if i have a n 
+binning: 
+F2 is stodred in r_intermediate_Result
+R is stored in r_intermediate_result 

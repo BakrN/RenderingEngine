@@ -1,1 +1,3 @@
 .vscode/* 
+software/.vs/* 
+software/src/out/* 
