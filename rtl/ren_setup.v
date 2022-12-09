@@ -3,8 +3,8 @@
 // Extracts triangle coefficients & bounding boxes and other info 
 // writes to binner queue
 // implementing this edge function(from subscript0 to subscript1): a=y0-y1, b=x1-x0 , c= x0*y1-x1*y0
-`include "rtl/ren_params.sv"
-//`include "ren_params.sv" // vivado 
+//`include "rtl/ren_defines.svh"
+`include "ren_defines.svh" // vivado 
 module ren_setup(
         clk, 
         // control 
@@ -150,6 +150,7 @@ module ren_setup(
     localparam s_attribdelta_0 = 4'd7 ; 
     localparam s_attribdelta_1 = 4'd8 ; 
     localparam s_tile_mul      = 4'd9 ; // for calculating the min tile y and steps 
+    localparam s_tile_mul_1      = 4'd10 ; // for multiplying floored min tile coordinates with fp tile size 
     // Wires
     wire [21:0] w_min_x , w_max_x, w_min_y , w_max_y ;
     wire [21:0] w_intermediatec_0,w_intermediatec_1,w_intermediatec_2 ,w_intermediatec_3;   // used when calculating coeff c
@@ -211,16 +212,18 @@ module ren_setup(
                         ((r_state == s_e_b)? {i_vtx2_x[21:0] , i_vtx1_x[21:0] , i_vtx0_x[21:0],i_vtx1_cr[21:0]} : 
                         ((r_state == s_e_c_0_0) ? {i_vtx0_x[21:0] , i_vtx2_x[21:0] , w_min_x[21:0] , w_max_x[21:0]} : // mul phase 1 ,calc mintile x and max tiley
                         ((r_state==s_tile_mul)?  {44'd0 ,   w_min_y[21:0] , w_max_y[21:0] }: 
+                        ((r_state==s_tile_mul_1)?  {44'd0 , r_min_tile_x , r_min_tile_y}: 
                         ((r_state==s_e_c_0_1) ? {i_vtx2_x[21:0] , i_vtx1_x[21:0] , i_vtx1_x[21:0] ,i_vtx0_x[21:0]} :   // mul phase 2
                         ((r_state==s_e_c_1) ? {r_e0_c [21:0], w_intermediatec_0 [21:0], w_intermediatec_2 [21:0], 22'd0} : // subtraction
                         ((r_state==s_attribdelta_0) ? {i_vtx0_cg [21:0], i_vtx1_cg[21:0] , i_vtx0_cb[21:0] ,i_vtx1_cb[21:0]} : 
-                        ((r_state==s_attribdelta_1) ? {i_vtx0_z[21:0] , i_vtx1_z[21:0], 44'd0} : // calculating min tile y and max tile y 
+                        ((r_state==s_attribdelta_1) ? {i_vtx0_z[21:0] , i_vtx1_z[21:0], 44'd0} : 
                         0)))))));  
 
     assign w_simd_in1 = (r_state == s_e_a) ? {i_vtx2_y[21:0] , i_vtx1_y[21:0] , i_vtx0_y[21:0],i_vtx2_cr[21:0]} : 
                         ((r_state == s_e_b)? {i_vtx0_x [21:0], i_vtx2_x [21:0], i_vtx1_x[21:0], i_vtx2_cr[21:0]} : 
                         ((r_state == s_e_c_0_0) ? {i_vtx2_y[21:0] , i_vtx0_y[21:0] , `fpTILE_SIZE_rc , `fpTILE_SIZE_rc }: 
-                        ((r_state==s_tile_mul)? {44'd0 ,`fpTILE_SIZE_rc , `fpTILE_SIZE_rc} : 
+                        ((r_state==s_tile_mul)? {44'd0 ,`fpTILE_SIZE_rc , `fpTILE_SIZE_rc} : // in tile mul multiply i_min_x and i_min_y  by fp_tile
+                        ((r_state==s_tile_mul_1)? {44'd0 ,`fpTILE_SIZE, `fpTILE_SIZE} : // in tile mul multiply i_min_x and i_min_y  by fp_tile
                         ((r_state==s_e_c_0_1) ? {i_vtx1_y[21:0] , i_vtx2_y[21:0] ,i_vtx0_y[21:0] , i_vtx1_y[21:0]} :
                         
                         ((r_state==s_e_c_1) ? {r_e1_c[21:0] ,w_intermediatec_1[21:0], w_intermediatec_3[21:0]  , 22'd0} : // this needs to chagne
@@ -291,9 +294,17 @@ module ren_setup(
                 if(w_simd_valid) begin 
                     r_min_tile_y <= {1'b0, w_floor_o_1 } ;
                     r_steps_y <= (w_ftoi_o_2 - w_ftoi_o_1) ;  
+                    r_state <= s_tile_mul_1;
+                end
+            end
+            s_tile_mul_1: begin 
+                if(w_simd_valid) begin 
+                    r_min_tile_x <= w_simd_out[2*22-1:22*1];
+                    r_min_tile_y <= w_simd_out[1*22-1:22*0];
                     r_state <= s_e_c_0_1;
                 end
             end
+            
             s_e_c_0_1:begin 
                 if(w_simd_valid) begin 
                     // move to next state and load coeff register

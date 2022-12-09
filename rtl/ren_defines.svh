@@ -21,7 +21,7 @@
 `define op_load_1 6 
 `define op_load_2 7  
 // HELP FUNCTIONS 
-typedef logic[21:0] fp22_t ; 
+typedef  logic[21:0] fp22_t ;  
 typedef struct packed {
     fp22_t x    ; 
     fp22_t y    ; 

@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-`include "ren_params.sv"
+`include "ren_defines.svh"
 
 module ren_rasterizer(
         clk         , 

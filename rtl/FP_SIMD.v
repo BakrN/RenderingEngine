@@ -217,7 +217,7 @@ module FP_SIMD(
     // module instantiation
     generate for (genvar i = 0 ; i<4; i = i+1) begin 
           
-    // latency 3
+    // latency 3 module for addition
     fp_add  u_add(
     .clk                     ( clk      ),
     .i_en                    ( w_adder_en),
@@ -226,14 +226,14 @@ module FP_SIMD(
     .i_adsb                  ( w_subtraction), // add 
     .o_c                     ( w_add_out[i])
     );
-    // Latency 2
+    // Latency 2 module for reciprocal 
     fp_rcp  u_rcp(
     .clk                     ( clk    ),
     .i_en                    ( w_rcp_en),
     .i_a                     ( w_rcp[i]   ),
     .o_c                     ( w_rcp_out[i])
     );
-    // Latency 3
+    // Latency 3 module for multiplication 
     fp_mul  u_mul(
     .clk                     ( clk    ),
     .i_en                    ( w_multiplier_en), 

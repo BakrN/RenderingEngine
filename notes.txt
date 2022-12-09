@@ -22,9 +22,9 @@ computer basis deltas in setup
 Triangle binner: 
 normalization of coefficients: 
 addition: 
-glm::abs(ee0.x) + glm::abs(ee0.y) = c0 => e2.x 
-glm::abs(ee1.x) + glm::abs(ee1.y) = c1 => e2.y
-glm::abs(ee2.x) + glm::abs(ee2.y) = c2 => e2.z
+glm::abs(ee0.x) + glm::abs(ee0.y) = c0 => e0.c
+glm::abs(ee1.x) + glm::abs(ee1.y) = c1 => e1.c
+glm::abs(ee2.x) + glm::abs(ee2.y) = c2 => e2.c
 rcp : 
 1/c0
 1/c1

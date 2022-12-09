@@ -1,6 +1,6 @@
 // Made By: Abubakr Nada 
 // Responsible for fragment shading, checks z buffer and writes to frame buffer 
-`include "ren_params.sv"
+`include "ren_defines.svh"
 
 module ren_frag_shader#(parameter attrib_count=4) ( // always enabled 
     clk, 

@@ -1,6 +1,6 @@
 //~ `New testbench
 `timescale  1ns / 1ps
-`include "rtl/ren_params.sv"
+`include "ren_defines.svh"
 //`include "ren_params.v" 
 module tb_FP_SIMD;
 `define assert(signal, value) \

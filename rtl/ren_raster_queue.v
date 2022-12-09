@@ -1,4 +1,4 @@
-`include "rtl/ren_params.sv"
+`include "ren_defines.svh"
 
 module ren_raster_queue( 
     // fifo info 
