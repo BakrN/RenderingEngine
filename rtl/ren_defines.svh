@@ -32,3 +32,7 @@ typedef struct packed {
     fp22_t b ; 
     fp22_t c ; 
 } edge_t;  
+typedef struct packed { 
+    fp22_t x ; 
+    fp22_t y ; 
+} vec2_f; 

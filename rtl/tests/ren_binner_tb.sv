@@ -57,7 +57,25 @@ ren_binner  u_ren_binner (
     .o_busy                  ( o_busy                      ),
     .o_fifo_write            ( o_fifo_write                )
 );
+logic [5:0] prev_state; 
 
+    
+    //always_ff @(u_ren_binner.r_state) begin
+    //    
+    //    if (u_ren_binner.r_state==32)begin  
+    //        if(prev_state == u_ren_binner.s_efunc_tr_red_0)
+    //            $display("print(f\"tile_x:  {get_dec_from_fp22('%b')},tile_y: {get_dec_from_fp22('%b')}  eTR0: {get_dec_from_fp22('%b')}\")", u_ren_binner.r_tx, u_ren_binner.r_ty, u_ren_binner.u_FP_SIMD.o_reg_out[87:3*22]);
+    //        if(prev_state == u_ren_binner.s_efunc_tr_red_1)
+    //            $display("print(f\"tile_x:  {get_dec_from_fp22('%b')},tile_y: {get_dec_from_fp22('%b')}  eTR1 {get_dec_from_fp22('%b')}\")",  u_ren_binner.r_tx, u_ren_binner.r_ty, u_ren_binner.u_FP_SIMD.o_reg_out[87:3*22]);
+    //        if(prev_state == u_ren_binner.s_efunc_tr_red_2)
+    //            $display("print(f\"tile_x:  {get_dec_from_fp22('%b')},tile_y: {get_dec_from_fp22('%b')}   eTR2: {get_dec_from_fp22('%b')}\")",u_ren_binner.r_tx, u_ren_binner.r_ty, u_ren_binner.u_FP_SIMD.o_reg_out[87:3*22] );
+    //    end
+    //    else 
+    //        prev_state  <= u_ren_binner.r_state;
+    //end 
+    initial begin 
+    $monitor("print(f\"tile_x: {get_dec_from_fp22('%b')} , tile_y: {get_dec_from_fp22('%b')}\")", u_ren_binner.r_tx, u_ren_binner.r_ty); 
+    end
 initial
 begin
     rstn = 1 ;
@@ -67,24 +85,34 @@ begin
     rstn =1 ; 
     i_en = 1; 
     i_valid = 1; 
-    i_e0.a = 22'b1101101111010000101001; 
-    i_e0.b = 22'b1101101111010000101001; 
-    i_e0.c = 22'b0111101001111111000011 ; 
-    i_e1.a = 22'b1101001011110100111011; 
-    i_e2.a = 22'b0101111001000110111100; 
-    i_e1.b = 22'b1101101111011010111000; 
-    i_e2.b = 22'b1101001000101010111011; 
-    i_e1.c = 22'b0111101000101001100011; 
-    i_e2.c = 22'b1000001001001001011101; 
+    
+    
+    
 
-    i_min_x = 22'b0101111000100000000000 ; 
-    i_min_y = 22'b0101001000000000000000 ; 
-    i_step_x = 17 ; 
-    i_step_y = 18 ; 
-    i_tile_size = 22'b0100111000000000000000 ; 
-    #(PERIOD*4)
-    i_en = 0 ; 
+    i_e1.a = 22'b0101101101100100010010; 
+    i_e2.a = 22'b1101101001000001001101; 
+    i_e0.a = 22'b1101011001000110001011;
+
+    i_e1.b = 22'b1101101110111001000101; 
+    i_e2.b = 22'b0101111000111110001000; 
+    i_e0.b = 22'b1101001100001100110000; 
+                                       ; 
+    i_e1.c = 22'b1111101111001101010101; 
+    i_e2.c = 22'b0111101000011111101001; 
+    i_e0.c = 22'b0111101101100010001000; 
+
+    i_min_x = 22'b0101111010100000000000; 
+    i_min_y = 22'b0101001100000000000000 ; 
+    i_step_x = 19 ; 
+    i_step_y = 14 ; 
+    i_tile_size = 22'b0100111000000000000000; //16 
     #(PERIOD*100)
+    i_en = 0 ; 
+
+    $display("ee0 = Vec3f (get_dec_from_fp22('%b'),get_dec_from_fp22('%b'),get_dec_from_fp22('%b')", u_ren_binner.r_ee0.a,u_ren_binner.r_ee0.b, u_ren_binner.r_ee0.c );
+    $display("ee1 = Vec3f (get_dec_from_fp22('%b'),get_dec_from_fp22('%b'),get_dec_from_fp22('%b')", u_ren_binner.r_ee1.a,u_ren_binner.r_ee1.b, u_ren_binner.r_ee1.c );
+    $display("ee2 = Vec3f (get_dec_from_fp22('%b'),get_dec_from_fp22('%b'),get_dec_from_fp22('%b')", u_ren_binner.r_ee2.a,u_ren_binner.r_ee2.b, u_ren_binner.r_ee2.c );
+    #(PERIOD*100 + 82*1000)
     $finish;
 end
 

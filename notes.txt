@@ -82,3 +82,7 @@ if i have a n
 binning: 
 F2 is stodred in r_intermediate_Result
 R is stored in r_intermediate_result 
+
+binner debug: 
+normalization works 
+tr and ta indices check 

@@ -77,7 +77,7 @@ module FP_SIMD(
 
 
     //assigns 
-    assign w_adder_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==0) ? 1 : 0); 
+    assign w_adder_en = (r_state==s_IDLE || r_state==s_REGUPDATE) ? 0 : ((r_out_selector==0) ? 1 : 0); 
     assign o_reg_out = {r_result[0] ,r_result[1], r_result[2], r_result[3]}; 
     assign w_rcp_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b10) ? 1 : 0); 
     assign w_multiplier_en = (r_state==s_IDLE) ? 0 : ((r_out_selector==2'b01) ? 1 : 0); 
@@ -92,11 +92,11 @@ module FP_SIMD(
         assign w_mul_ia[j] = (i_opcode[2] == 1) ? r_result[j] : i_in1[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ; 
         assign w_rcp[j] =  r_result[j] ;
         if (j== 2)begin 
-            assign w_add_ib[j]= (i_opcode[2] == 1 ) ?  r_result[j+1] :i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
-            assign w_mul_ib[j] = (i_opcode[2] == 1) ? r_result[j+1] : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+            assign w_add_ib[j]= (i_opcode[2] == 1 ) ? r_result[3] :i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+            assign w_mul_ib[j] = (i_opcode[2] == 1) ? r_result[3] : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
         end else if (j==0) begin // 2nd stage reduce. only care about1st adder
-            assign w_add_ib[j]= (i_opcode[2] == 1) ? ((r_state <4)? r_result[j+1] : r_result[j+2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
-            assign w_mul_ib[j] = (i_opcode[2] == 1) ? ((r_state <4)? r_result[j+1] : r_result[j+2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+            assign w_add_ib[j]= (i_opcode[2] == 1) ? ((r_state <4)? r_result [1] : r_result[2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
+            assign w_mul_ib[j] = (i_opcode[2] == 1) ? ((r_state <4)? r_result[1] : r_result[2] ) : i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
         end else begin 
             assign w_add_ib[j]=   i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21]  ; 
             assign w_mul_ib[j] =  i_in2[(SIMD_WIDTH-j)*22-1: (SIMD_WIDTH-j)*22-1-21] ; 
@@ -170,10 +170,10 @@ module FP_SIMD(
             end
             s_S0_1: begin 
                 
-                if (i_opcode == op_rcp) 
-                    r_state <= s_OUT; 
-                else 
-                    r_state <= s_S0_2; 
+                //if (i_opcode == op_rcp) 
+                    //r_state <= s_OUT; 
+                //else 
+                r_state <= s_S0_2; 
 
             end
             s_S0_2: begin 
@@ -185,10 +185,8 @@ module FP_SIMD(
                 
             end
             s_REGUPDATE: begin 
-                r_result[0]<= o_output[(SIMD_WIDTH)*22-1: (SIMD_WIDTH)*22 - 1 -21]; 
-                r_result[1]<= o_output[(SIMD_WIDTH-1)*22-1: (SIMD_WIDTH-1)*22 - 1 -21]; 
-                r_result[2]<= o_output[(SIMD_WIDTH-2)*22-1: (SIMD_WIDTH-2)*22 - 1 -21]; 
-                r_result[3]<= o_output[(SIMD_WIDTH-3)*22-1: (SIMD_WIDTH-3)*22 - 1 -21]; 
+                r_result[0]<= o_output[(SIMD_WIDTH)*22-1 : (SIMD_WIDTH-1)*22]; 
+                r_result[2]<= o_output[(SIMD_WIDTH-2)*22-1: (SIMD_WIDTH-3)*22];  
                 r_state <= s_S1_0; 
             end
             s_S1_0: begin 
@@ -201,10 +199,10 @@ module FP_SIMD(
                 r_state <= s_OUT; // no need to update reg 
             end 
             s_OUT: begin 
-                r_result[0]<= o_output[(SIMD_WIDTH)*22-1: (SIMD_WIDTH)*22 - 1 -21]; 
-                r_result[1]<= o_output[(SIMD_WIDTH-1)*22-1: (SIMD_WIDTH-1)*22 - 1 -21]; 
-                r_result[2]<= o_output[(SIMD_WIDTH-2)*22-1: (SIMD_WIDTH-2)*22 - 1 -21]; 
-                r_result[3]<= o_output[(SIMD_WIDTH-3)*22-1: (SIMD_WIDTH-3)*22 - 1 -21]; 
+                r_result[0]<= o_output[(SIMD_WIDTH)*22-1 : (SIMD_WIDTH-1)*22]; 
+                r_result[1]<= o_output[(SIMD_WIDTH-1)*22-1: (SIMD_WIDTH-2)*22]; 
+                r_result[2]<= o_output[(SIMD_WIDTH-2)*22-1: (SIMD_WIDTH-3)*22]; 
+                r_result[3]<= o_output[(SIMD_WIDTH-3)*22-1: (SIMD_WIDTH-4)*22]; 
                 r_state <= s_IDLE ; 
             end 
            
