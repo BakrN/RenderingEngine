@@ -59,7 +59,7 @@ ren_binner  u_ren_binner (
 );
 logic [5:0] prev_state; 
 
-    
+    // testing tile stepping 
     //always_ff @(u_ren_binner.r_state) begin
     //    
     //    if (u_ren_binner.r_state==32)begin  
@@ -73,6 +73,15 @@ logic [5:0] prev_state;
     //    else 
     //        prev_state  <= u_ren_binner.r_state;
     //end 
+    // get accepted tile
+    //always_ff @(posedge u_ren_binner.o_fifo_write) begin
+    //    $display("f\"ACCEPT tile_x:  {get_dec_from_fp22('%b')},tile_y: {get_dec_from_fp22('%b')}  eTR0: {get_dec_from_fp22('%b')}\"", u_ren_binner.r_tx, u_ren_binner.r_ty, u_ren_binner.u_FP_SIMD.o_reg_out[87:3*22]);
+    //end
+    // get overlap tiles
+    //always_ff @(posedge u_ren_binner.w_raster_fifo_write) begin
+    //    $display("f\"OVERLAP tile_x:  {get_dec_from_fp22('%b')},tile_y: {get_dec_from_fp22('%b')}  eTR0: {get_dec_from_fp22('%b')}\"", u_ren_binner.r_tx, u_ren_binner.r_ty, u_ren_binner.u_FP_SIMD.o_reg_out[87:3*22]);
+    //end
+    
     initial begin 
     $monitor("print(f\"tile_x: {get_dec_from_fp22('%b')} , tile_y: {get_dec_from_fp22('%b')}\")", u_ren_binner.r_tx, u_ren_binner.r_ty); 
     end

@@ -8,35 +8,37 @@ module ren_rasterizer(
         i_valid     , 
         i_busy_r    , 
         
-        i_e0_edge   , 
-        i_e1_edge   , 
-        i_e2_edge   ,  
+        i_e0, 
+        i_e1, 
+        i_e2,  
         
         // fifo 
-        i_empty     , 
-        i_tile      ,  
+        i_empty_r     , 
+        i_fifo_full_s,  
+       i_tile      ,  
         o_fifo_read , 
         // tile  
         i_tile , 
-        o_tile ,
-        o_busy      
+        o_tile , 
+        o_shader_out , 
+        o_raster_out , 
+        o_busy  
 ); 
     // Get a binner module but 
     input  logic clk;
     input  logic i_en;
     input  logic rstn; 
-    input i_empty; 
+    input i_empty_r; 
+    input i_fifo_full_s; 
     input  logic i_valid;
     input  logic i_busy_r;
-    input  logic i_full;
-    input  edge_t i_e0_edge; 
-    input  edge_t i_e1_edge;  
-    input  edge_t i_e2_edge; 
+
+    input  edge_t i_e0; 
+    input  edge_t i_e1;  
+    input  edge_t i_e2;  
     input  tile_t i_tile ; 
-    output fp22_t o_tile_x;
-    output fp22_t o_tile_y;
     output tile_t o_tile ; 
-    output  o_tile_size;
+
     output  o_fifo_read   ; 
     output  o_busy;
     
@@ -59,34 +61,68 @@ module ren_rasterizer(
     /*                                  Binner IO                                 */
     /* -------------------------------------------------------------------------- */
     wire w_bin_busy; 
+
+    // ren_binner Inputs
+    assign w_binner_en = (r_state == s_binning) ; 
+   
+  
+    // outputs
+
     /* -------------------------------------------------------------------------- */
     /*                                   Assign                                   */
     /* -------------------------------------------------------------------------- */
     assign o_fifo_read = r_state <= s_fetch_tile;  
     assign w_adder_a = (r_index==1) ? i_tile.y[21:0] :i_tile.x[21:0] ; 
-    assign w_adder_b = get_fp_2(r_tile.size);  // fp/2 
-    /* -------------------------------------------------------------------------- */
+    assign w_adder_b = get_fp_2(i_tile.size);  // fp/2 
+    /* -------------------------------------------------------------------------- */ 
     /*                                Always Blocks                               */
     /* -------------------------------------------------------------------------- */
     always_ff @(posedge clk or negedge rstn) begin  
         if (!rstn)  begin
             r_state <= s_IDLE; 
             r_index <= 0 ; 
+            r_tile <= 0 ;  
+            r_intermediate <= 0 ; 
         end
         else begin 
             case (r_state)
                 s_IDLE : begin 
                     r_index <=  0 ;  
-                    if(~i_empty && ~w_bin_busy) begin //  if not empty and binner not busy 
+                    if(!i_empty && !w_bin_busy) begin //  if not empty and binner not busy 
                         r_state <= s_fetch_tile; 
                     end
                 end 
                 s_fetch_tile : begin 
-                    r_state <= s_binning; 
-                    r_tile  <= i_tile   ; 
+                    if (!w_bin_busy) begin 
+                        r_state <= s_binning ; 
+                    end
+                    if (r_index ==0 ) begin  
+                        r_tile <= i_tile ;   
+
+                        
+                    end else if (r_index ==1) begin  
+                        r_tile.x <= i_tile.x; 
+                        r_tile.y <= w_adder_out ; 
+                        r_intermediate <= w_adder_out; 
+                
+                    end
+                    else if (r_index ==2) begin 
+                        r_tile.x <= w_adder_out ; 
+                        r_tile.y <= i_tile.y ; 
+                    end else begin
+                        r_tile.y <= r_intermediate; 
+                        r_tile.x <= w_adder_out ;
+                    end
+
                 end 
                 s_binning : begin 
-                    r_state <= s_IDLE; 
+                    if (r_index < 3) begin 
+                        r_index <= r_index + 2'd1 ;  
+                        r_state <= s_fetch_tile ; 
+                    end 
+                    else 
+                        r_state <= s_IDLE;  
+
                 end
             endcase 
         end
@@ -106,6 +142,32 @@ module ren_rasterizer(
 
         .o_c                     ( w_adder_out)
     );
+
+
+ren_binner  u_ren_binner (
+    .clk               ( clk             ),
+    .i_en              ( i_en            ),
+    .rstn              ( rstn            ),
+    .i_valid           ( i_valid         ),
+    .i_fifo_full_r     ( ~i_empty_r   ),
+    .i_fifo_full_s     ( i_fifo_full_s   ), 
+    .i_e0             ( i_e0           ),
+    .i_e1             ( i_e1           ),
+    .i_e2             ( i_e2           ),
+    .i_min_x          ( r_tile.x),
+    .i_min_y          ( r_tile.y),
+    .i_step_x                (0),
+    .i_step_y                (0),
+    .i_tile_size      ( r_tile.size    ), 
+
+    .o_tile           ( o_tile         ),
+    .o_busy                  ( w_bin_busy                ),
+    .o_fifo_write            ( o_shader_out          ), 
+    .o_raster_out               (o_raster_out)
+);
+
+
+
 
     function get_fp_2; // assums tile size is to the power of 2
     input [31:0] number ; 
@@ -202,4 +264,4 @@ endmodule
 7 -
 8 -
 9 - 
-
+*/

@@ -25,7 +25,8 @@ module ren_binner(
     // outputs
     o_tile , 
     o_busy , 
-    o_fifo_write 
+    o_fifo_write , 
+    o_raster_write 
 ) ;
     // PORTS IO 
     input logic clk ;     
@@ -47,6 +48,7 @@ module ren_binner(
  
     output o_busy; 
     output o_fifo_write ; 
+    output o_raster_write; 
     // Constant 
     // FSM : s_STAGE_OPERATION(_#)// in sequential order 
 
@@ -187,7 +189,7 @@ module ren_binner(
     assign w_corner_offsets[2].y = i_tile_size ; 
     assign w_corner_offsets[3].x  = i_tile_size[21:0] ;//{ TILE_SIZE , TILE_SIZE} // UR
     assign w_corner_offsets[3].y  = i_tile_size[21:0] ;//{ TILE_SIZE , TILE_SIZE} // UR
-    
+    assign o_raster_write = (r_state == s_raster_out); 
     // offsets 
     /*{ 0.f, 0.f},                                            // LL
     { TILE_SIZE, 0.f },                     // LR
